@@ -6,38 +6,38 @@ const prisma = new PrismaClient();
 const typeDefs = `
   type Post {
     id: Int!
-    name: String!
-    email: String!
+    title: String!
+    content: String!
   }
 
   type Query {
-    users: [User]
-    user(id: Int!): User
+    posts: [Post]
+    post(id: Int!): Post
   }
 
   type Mutation {
-    createUser(name: String!, email: String!): User
-    updateUser(id: Int!, name: String, email: String): User
-    deleteUser(id: Int!): User
+    createPost(title: String!, content: String!): Post
+    updatePost(id: Int!, title: String, content: String): Post
+    deletePost(id: Int!): Post
   }
 `;
 
 const resolvers = {
   Query: {
-    users: () => prisma.user.findMany(),
-    user: (_, { id }) => prisma.user.findUnique({ where: { id } }),
+    posts: () => prisma.post.findMany(),
+    post: (_, { id }) => prisma.post.findUnique({ where: { id } }),
   },
   Mutation: {
-    createUser: (_, { name, email }) =>
-      prisma.user.create({ data: { name, email } }),
-    updateUser: (_, { id, name, email }) =>
-      prisma.user.update({ where: { id }, data: { name, email } }),
-    deleteUser: (_, { id }) => prisma.user.delete({ where: { id } }),
+    createPost: (_, { title, content }) =>
+      prisma.post.create({ data: { title, content } }),
+    updatePost: (_, { id, title, content }) =>
+      prisma.post.update({ where: { id }, data: { title, content } }),
+    deletePost: (_, { id }) => prisma.post.delete({ where: { id } }),
   },
 };
 
 const server = new ApolloServer({ typeDefs, resolvers });
 
 server.listen({ port: 4001 }).then(({ url }) => {
-  console.log(`Users service ready at ${url}`);
+  console.log(`Server ready at ${url}`);
 });
