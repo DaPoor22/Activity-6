@@ -1,7 +1,17 @@
-const { ApolloServer } = require("apollo-server");
+const { ApolloServer } = require("@apollo/server");
 const { PrismaClient } = require("@prisma/client");
+const { createServer } = require("http");
+const express = require("express");
+const { makeExecutableSchema } = require("@graphql-tools/schema");
+const { WebSocketServer } = require("ws");
+const { useServer } = require("graphql-ws/lib/use/ws");
+const cors = require("cors");
+const { ApolloServerPluginDrainHttpServer } = require("@apollo/server/plugin/drainHttpServer");
+const { PubSub } = require("graphql-subscriptions");
+const { expressMiddleware } = require("@apollo/server/express4");
 
 const prisma = new PrismaClient();
+const pubsub = new PubSub();
 
 const typeDefs = `
   type Post {
@@ -20,6 +30,10 @@ const typeDefs = `
     updatePost(id: Int!, title: String, content: String): Post
     deletePost(id: Int!): Post
   }
+
+  type Subscription {
+    postCreated: Post
+  }
 `;
 
 const resolvers = {
@@ -28,16 +42,57 @@ const resolvers = {
     post: (_, { id }) => prisma.post.findUnique({ where: { id } }),
   },
   Mutation: {
-    createPost: (_, { title, content }) =>
-      prisma.post.create({ data: { title, content } }),
+    createPost: async (_, { title, content }) => {
+      const newPost = await prisma.post.create({ data: { title, content } });
+      pubsub.publish("POST_CREATED", { postCreated: newPost });
+      return newPost;
+    },
     updatePost: (_, { id, title, content }) =>
       prisma.post.update({ where: { id }, data: { title, content } }),
     deletePost: (_, { id }) => prisma.post.delete({ where: { id } }),
   },
+  Subscription: {
+    postCreated: {
+      subscribe: () => pubsub.asyncIterableIterator(["POST_CREATED"]), // FIXED
+    },
+  },
 };
 
-const server = new ApolloServer({ typeDefs, resolvers });
+const schema = makeExecutableSchema({ typeDefs, resolvers });
+const app = express();
+const httpServer = createServer(app);
 
-server.listen({ port: 4001 }).then(({ url }) => {
-  console.log(`Server ready at ${url}`);
+// WebSocket Server
+const wsServer = new WebSocketServer({
+  server: httpServer,
+  path: "/graphql",
 });
+const serverCleanup = useServer({ schema }, wsServer);
+
+// Apollo Server
+const server = new ApolloServer({
+  schema,
+  plugins: [
+    ApolloServerPluginDrainHttpServer({ httpServer }),
+    {
+      async serverWillStart() {
+        return {
+          async drainServer() {
+            await serverCleanup.dispose();
+          },
+        };
+      },
+    },
+  ],
+});
+
+// Start the Server
+(async () => {
+  await server.start(); // FIXED
+  app.use("/graphql", cors(), express.json(), expressMiddleware(server)); // FIXED
+
+  const PORT = 4001;
+  httpServer.listen(PORT, () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}/graphql`);
+  });
+})();
